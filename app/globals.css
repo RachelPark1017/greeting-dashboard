@@ -1,3 +1,11 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+* {
+  border-color: #e4e4e7;
+}
+
+body {
+  background-color: #fafafa;
+  color: #09090b;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}

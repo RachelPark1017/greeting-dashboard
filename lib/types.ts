@@ -75,3 +75,36 @@ export interface OpeningWithPassedCount {
   dueDate: string | null
   passedCount: number
 }
+
+// 채널 통계
+export interface ChannelStat {
+  channel: string
+  count: number
+  avgScore: number | null
+  avgDays: number | null
+}
+
+// 월별 추이
+export interface MonthlyTrend {
+  month: string
+  passed: number
+}
+
+// 공고 상세 (개요 테이블용)
+export interface OpeningDetail {
+  id: number
+  title: string
+  field: string | null
+  career: string | null
+  passedCount: number
+}
+
+// 전체 대시보드 API 응답
+export interface DashboardResponse {
+  stats: DashboardStats
+  openings: OpeningWithPassedCount[]
+  passedApplicants: PassedApplicant[]
+  channelStats: ChannelStat[]
+  monthlyTrend: MonthlyTrend[]
+  openingDetails: OpeningDetail[]
+}
