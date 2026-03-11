@@ -3,7 +3,6 @@ import { fetchOpenings, fetchPassedApplicants } from '@/lib/greeting-api'
 import type { DashboardStats, OpeningWithPassedCount } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 300 // 5분
 
 export async function GET() {
   try {
