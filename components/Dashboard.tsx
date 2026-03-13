@@ -1,10 +1,21 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import OverviewTab from './OverviewTab'
 import FunnelTab from './FunnelTab'
 import ChannelTab from './ChannelTab'
-import type { DashboardResponse } from '@/lib/types'
+import type { DashboardResponse, DashboardStats, ChannelStat, MonthlyTrend, OpeningDetail } from '@/lib/types'
+
+function normalizeReferer(referer: string | null): string {
+  if (!referer) return '기타'
+  const lower = referer.toLowerCase().replace(/\s+/g, '')
+  if (lower.includes('saramin') || lower.includes('사람인')) return '사람인'
+  if (lower.includes('jobkorea') || lower.includes('잡코리아')) return '잡코리아'
+  if (lower.includes('wanted') || lower.includes('원티드')) return '원티드'
+  if (lower.includes('jumpit') || lower.includes('점핏')) return '점핏'
+  if (lower.includes('사내추천') || lower.includes('내부추천') || lower === 'internal') return '사내추천'
+  return '기타'
+}
 
 const REFRESH_INTERVAL = 5 * 60 * 1000
 
@@ -16,12 +27,31 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]['key']
 
+const PERIOD_OPTIONS = [
+  { key: 'all', label: '전체 기간' },
+  { key: '1m', label: '최근 1개월' },
+  { key: '3m', label: '최근 3개월' },
+  { key: '6m', label: '최근 6개월' },
+  { key: '1y', label: '최근 1년' },
+] as const
+
+type PeriodKey = (typeof PERIOD_OPTIONS)[number]['key']
+
+function getPeriodStartDate(key: PeriodKey): string | null {
+  if (key === 'all') return null
+  const now = new Date()
+  const months = key === '1m' ? 1 : key === '3m' ? 3 : key === '6m' ? 6 : 12
+  const d = new Date(now.getFullYear(), now.getMonth() - months, now.getDate())
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export default function Dashboard() {
   const [data, setData] = useState<DashboardResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [period, setPeriod] = useState<PeriodKey>('all')
 
   const fetchData = useCallback(async () => {
     try {
@@ -44,6 +74,69 @@ export default function Dashboard() {
     const interval = setInterval(fetchData, REFRESH_INTERVAL)
     return () => clearInterval(interval)
   }, [fetchData])
+
+  const filteredData = useMemo(() => {
+    if (!data) return null
+    const startDate = getPeriodStartDate(period)
+    if (!startDate) return data
+
+    const filteredPassed = data.passedApplicants.filter((a) => a.passDate >= startDate)
+
+    const now = new Date()
+    const thisMonthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const thisMonthPassed = filteredPassed.filter((a) => a.passDate >= thisMonthStart)
+
+    const daysToHireList = filteredPassed
+      .filter((a) => a.submitDate && a.passDate)
+      .map((a) => Math.round((new Date(a.passDate).getTime() - new Date(a.submitDate).getTime()) / (1000 * 60 * 60 * 24)))
+      .filter((d) => d >= 0)
+
+    const stats: DashboardStats = {
+      activeOpeningsCount: data.stats.activeOpeningsCount,
+      thisMonthPassedCount: thisMonthPassed.length,
+      totalPassedCount: filteredPassed.length,
+      avgDaysToHire: daysToHireList.length > 0 ? Math.round(daysToHireList.reduce((a, b) => a + b, 0) / daysToHireList.length) : null,
+    }
+
+    const channelMap: Record<string, { count: number; scores: number[]; days: number[] }> = {}
+    filteredPassed.forEach((a) => {
+      const ch = normalizeReferer(a.referer)
+      if (!channelMap[ch]) channelMap[ch] = { count: 0, scores: [], days: [] }
+      channelMap[ch].count++
+      if (a.score != null) channelMap[ch].scores.push(a.score)
+      if (a.submitDate && a.passDate) {
+        const d = Math.round((new Date(a.passDate).getTime() - new Date(a.submitDate).getTime()) / (1000 * 60 * 60 * 24))
+        if (d >= 0) channelMap[ch].days.push(d)
+      }
+    })
+    const channelStats: ChannelStat[] = Object.entries(channelMap)
+      .map(([channel, v]) => ({
+        channel,
+        count: v.count,
+        avgScore: v.scores.length > 0 ? Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length) : null,
+        avgDays: v.days.length > 0 ? Math.round(v.days.reduce((a, b) => a + b, 0) / v.days.length) : null,
+      }))
+      .sort((a, b) => b.count - a.count)
+
+    const monthlyTrend: MonthlyTrend[] = Array.from({ length: 6 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
+      const monthStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      const mStart = `${monthStr}-01`
+      const endD = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+      const mEnd = `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}-${String(endD.getDate()).padStart(2, '0')}`
+      return {
+        month: `${d.getMonth() + 1}월`,
+        passed: filteredPassed.filter((a) => a.passDate >= mStart && a.passDate <= mEnd).length,
+      }
+    })
+
+    const passedByOpening: Record<number, number> = {}
+    filteredPassed.forEach((a) => { passedByOpening[a.openingId] = (passedByOpening[a.openingId] ?? 0) + 1 })
+    const openings = data.openings.map((o) => ({ ...o, passedCount: passedByOpening[o.id] ?? 0 }))
+    const openingDetails: OpeningDetail[] = data.openingDetails.map((d) => ({ ...d, passedCount: passedByOpening[d.id] ?? 0 }))
+
+    return { ...data, stats, passedApplicants: filteredPassed, channelStats, monthlyTrend, openings, openingDetails }
+  }, [data, period])
 
   if (loading) {
     return (
@@ -72,7 +165,7 @@ export default function Dashboard() {
     )
   }
 
-  if (!data) return null
+  if (!filteredData) return null
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -86,6 +179,16 @@ export default function Dashboard() {
               </span>
             )}
           </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as PeriodKey)}
+              className="h-8 rounded-md border border-zinc-200 bg-white px-2 text-sm text-zinc-700 focus:outline-none focus:ring-2 focus:ring-zinc-900/10"
+            >
+              {PERIOD_OPTIONS.map((o) => (
+                <option key={o.key} value={o.key}>{o.label}</option>
+              ))}
+            </select>
           <button
             onClick={() => { setLoading(true); fetchData() }}
             className="inline-flex items-center rounded-md text-sm font-medium h-8 px-3 border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 transition-colors"
@@ -98,6 +201,7 @@ export default function Dashboard() {
             </svg>
             새로고침
           </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -123,22 +227,22 @@ export default function Dashboard() {
       <main className="max-w-7xl mx-auto px-6 py-6">
         {activeTab === 'overview' && (
           <OverviewTab
-            stats={data.stats}
-            monthlyTrend={data.monthlyTrend}
-            channelStats={data.channelStats}
-            openingDetails={data.openingDetails}
+            stats={filteredData.stats}
+            monthlyTrend={filteredData.monthlyTrend}
+            channelStats={filteredData.channelStats}
+            openingDetails={filteredData.openingDetails}
           />
         )}
         {activeTab === 'funnel' && (
           <FunnelTab
-            passedApplicants={data.passedApplicants}
-            openings={data.openings}
+            passedApplicants={filteredData.passedApplicants}
+            openings={filteredData.openings}
           />
         )}
         {activeTab === 'channel' && (
           <ChannelTab
-            channelStats={data.channelStats}
-            passedApplicants={data.passedApplicants}
+            channelStats={filteredData.channelStats}
+            passedApplicants={filteredData.passedApplicants}
           />
         )}
       </main>

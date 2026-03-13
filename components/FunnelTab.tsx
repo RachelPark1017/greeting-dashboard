@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import {
   BarChart,
   Bar,
@@ -25,9 +25,12 @@ const tooltipStyle = {
   fontSize: '12px',
 }
 
+const PAGE_SIZE = 10
+
 export default function FunnelTab({ passedApplicants, openings }: Props) {
   const [search, setSearch] = useState('')
   const [filterOpening, setFilterOpening] = useState('')
+  const [page, setPage] = useState(0)
 
   // 공고별 리드타임
   const openingLeadTime = openings
@@ -57,13 +60,25 @@ export default function FunnelTab({ passedApplicants, openings }: Props) {
     new Map(passedApplicants.map((a) => [a.openingId, a.openingTitle])).entries(),
   )
 
-  const filtered = passedApplicants.filter((a) => {
-    const matchSearch =
-      search === '' || a.name.includes(search) || a.email.includes(search)
-    const matchOpening =
-      filterOpening === '' || String(a.openingId) === filterOpening
-    return matchSearch && matchOpening
-  })
+  const filtered = useMemo(() => {
+    const result = passedApplicants
+      .filter((a) => {
+        const matchSearch =
+          search === '' || a.name.includes(search) || a.email.includes(search)
+        const matchOpening =
+          filterOpening === '' || String(a.openingId) === filterOpening
+        return matchSearch && matchOpening
+      })
+      .sort((a, b) => new Date(b.passDate).getTime() - new Date(a.passDate).getTime())
+    return result
+  }, [passedApplicants, search, filterOpening])
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  // 검색/필터 변경 시 페이지 리셋
+  const handleSearch = (v: string) => { setSearch(v); setPage(0) }
+  const handleFilter = (v: string) => { setFilterOpening(v); setPage(0) }
 
   return (
     <div className="space-y-6">
@@ -119,13 +134,13 @@ export default function FunnelTab({ passedApplicants, openings }: Props) {
                 type="text"
                 placeholder="이름 또는 이메일 검색..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => handleSearch(e.target.value)}
                 className="h-9 w-full rounded-md border border-zinc-200 bg-white px-3 pl-8 py-1 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400 transition-colors"
               />
             </div>
             <select
               value={filterOpening}
-              onChange={(e) => setFilterOpening(e.target.value)}
+              onChange={(e) => handleFilter(e.target.value)}
               className="h-9 rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-zinc-900/10 focus:border-zinc-400"
             >
               <option value="">전체 공고</option>
@@ -147,14 +162,14 @@ export default function FunnelTab({ passedApplicants, openings }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {paged.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="py-8 text-center text-sm text-zinc-400">
                       검색 결과가 없습니다
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((a) => {
+                  paged.map((a) => {
                     const days = a.submitDate && a.passDate
                       ? Math.round((new Date(a.passDate).getTime() - new Date(a.submitDate).getTime()) / (1000 * 60 * 60 * 24))
                       : null
@@ -189,6 +204,33 @@ export default function FunnelTab({ passedApplicants, openings }: Props) {
               </tbody>
             </table>
           </div>
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between mt-4 pt-4 border-t border-zinc-100">
+              <p className="text-xs text-zinc-400">
+                총 {filtered.length}명 중 {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, filtered.length)}명
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  disabled={page === 0}
+                  className="h-8 px-3 rounded-md border border-zinc-200 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  이전
+                </button>
+                <span className="px-3 text-sm text-zinc-500">
+                  {page + 1} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                  disabled={page >= totalPages - 1}
+                  className="h-8 px-3 rounded-md border border-zinc-200 text-sm text-zinc-600 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  다음
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
