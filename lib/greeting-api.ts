@@ -1,4 +1,4 @@
-import type { GreetingResponse, PaginatedResponse, Opening, PassedApplicant } from './types'
+import type { GreetingResponse, PaginatedResponse, Opening, PassedApplicant, FormResponse } from './types'
 
 const BASE_URL = 'https://oapi.greetinghr.com'
 
@@ -45,4 +45,15 @@ export async function fetchPassedApplicants(
   const json: GreetingResponse<PaginatedResponse<PassedApplicant>> = await res.json()
   if (!json.success) throw new Error(json.message ?? '합격자 목록 조회 실패')
   return json.data
+}
+
+export async function fetchFormsAnswer(applicantId: number): Promise<FormResponse[]> {
+  const res = await fetch(`${BASE_URL}/openapi/applicants/${applicantId}/forms-answer`, {
+    headers: getHeaders(),
+    next: { revalidate: 300 },
+  })
+  if (!res.ok) return [] // 설문 미응답 지원자는 빈 배열
+  const json: GreetingResponse<{ responses: FormResponse[] }> = await res.json()
+  if (!json.success) return []
+  return json.data.responses ?? []
 }

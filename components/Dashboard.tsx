@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import OverviewTab from './OverviewTab'
 import FunnelTab from './FunnelTab'
 import ChannelTab from './ChannelTab'
+import SurveyTab from './SurveyTab'
 import type { DashboardResponse, DashboardStats, ChannelStat, MonthlyTrend, OpeningDetail } from '@/lib/types'
 
 function normalizeReferer(referer: string | null): string {
@@ -23,6 +24,7 @@ const TABS = [
   { key: 'overview', label: '개요' },
   { key: 'funnel', label: '채용 현황' },
   { key: 'channel', label: '채널 분석' },
+  { key: 'survey', label: '설문 결과' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -172,7 +174,7 @@ export default function Dashboard() {
       <header className="sticky top-0 z-50 w-full border-b border-zinc-200 bg-white/80 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto flex h-14 items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold tracking-tight text-zinc-900">채용 대시보드</h1>
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-900">채용(그리팅) 대시보드</h1>
             {lastUpdated && (
               <span className="hidden sm:inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-0.5 text-xs text-zinc-500">
                 {lastUpdated.toLocaleTimeString('ko-KR')} 업데이트
@@ -244,6 +246,9 @@ export default function Dashboard() {
             channelStats={filteredData.channelStats}
             passedApplicants={filteredData.passedApplicants}
           />
+        )}
+        {activeTab === 'survey' && (
+          <SurveyTab surveys={filteredData.surveys} />
         )}
       </main>
     </div>

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchOpenings, fetchPassedApplicants } from '@/lib/greeting-api'
+import { fetchOpenings, fetchPassedApplicants, fetchFormsAnswer } from '@/lib/greeting-api'
 import type {
   DashboardStats,
   OpeningWithPassedCount,
@@ -8,6 +8,8 @@ import type {
   MonthlyTrend,
   OpeningDetail,
   Opening,
+  SurveyAggregated,
+  FormResponse,
 } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -94,6 +96,38 @@ function computeOpeningDetails(
   })
 }
 
+function aggregateSurveys(allResponses: FormResponse[]): SurveyAggregated[] {
+  const byForm: Record<string, { formTitle: string; responses: FormResponse[] }> = {}
+  for (const r of allResponses) {
+    if (!byForm[r.formTitle]) byForm[r.formTitle] = { formTitle: r.formTitle, responses: [] }
+    byForm[r.formTitle].responses.push(r)
+  }
+
+  return Object.values(byForm).map(({ formTitle, responses }) => {
+    const questionMap: Record<string, Record<string, number>> = {}
+    for (const r of responses) {
+      for (const a of r.answers) {
+        if (!questionMap[a.questionTitle]) questionMap[a.questionTitle] = {}
+        for (const ans of a.answers) {
+          const content = ans.answerContent || '(무응답)'
+          questionMap[a.questionTitle][content] = (questionMap[a.questionTitle][content] ?? 0) + 1
+        }
+      }
+    }
+
+    return {
+      formTitle,
+      totalResponses: responses.length,
+      questions: Object.entries(questionMap).map(([questionTitle, dist]) => ({
+        questionTitle,
+        answerDistribution: Object.entries(dist)
+          .map(([answer, count]) => ({ answer, count }))
+          .sort((a, b) => b.count - a.count),
+      })),
+    }
+  })
+}
+
 function computeDaysToHire(applicants: PassedApplicant[]): number | null {
   const days = applicants
     .filter((a) => a.submitDate && a.passDate)
@@ -163,7 +197,37 @@ function getMockData() {
     career: fieldMap[d.id]?.career ?? null,
   }))
 
-  return { stats, openings, passedApplicants, channelStats, monthlyTrend, openingDetails: enrichedDetails }
+  const mockSurveys: SurveyAggregated[] = [
+    {
+      formTitle: '커피챗 경험 설문조사',
+      totalResponses: 8,
+      questions: [
+        { questionTitle: '커피챗 전반적 만족도', answerDistribution: [{ answer: '매우 만족', count: 5 }, { answer: '만족', count: 2 }, { answer: '보통', count: 1 }] },
+        { questionTitle: '담당자의 설명이 충분했나요?', answerDistribution: [{ answer: '네', count: 7 }, { answer: '아니오', count: 1 }] },
+        { questionTitle: '커피챗 후 지원 의향', answerDistribution: [{ answer: '지원하겠다', count: 6 }, { answer: '고민 중', count: 2 }] },
+      ],
+    },
+    {
+      formTitle: '1차 면접 경험 설문조사',
+      totalResponses: 6,
+      questions: [
+        { questionTitle: '면접 분위기는 어땠나요?', answerDistribution: [{ answer: '편안했다', count: 4 }, { answer: '보통', count: 1 }, { answer: '긴장됐다', count: 1 }] },
+        { questionTitle: '면접관의 태도는 어땠나요?', answerDistribution: [{ answer: '매우 좋음', count: 3 }, { answer: '좋음', count: 2 }, { answer: '보통', count: 1 }] },
+        { questionTitle: '면접 과정에 대한 안내가 충분했나요?', answerDistribution: [{ answer: '네', count: 5 }, { answer: '아니오', count: 1 }] },
+      ],
+    },
+    {
+      formTitle: '2차 면접 경험 설문조사',
+      totalResponses: 4,
+      questions: [
+        { questionTitle: '면접 분위기는 어땠나요?', answerDistribution: [{ answer: '편안했다', count: 3 }, { answer: '보통', count: 1 }] },
+        { questionTitle: '회사에 대한 이해가 높아졌나요?', answerDistribution: [{ answer: '매우 그렇다', count: 2 }, { answer: '그렇다', count: 2 }] },
+        { questionTitle: '전반적 만족도', answerDistribution: [{ answer: '매우 만족', count: 3 }, { answer: '만족', count: 1 }] },
+      ],
+    },
+  ]
+
+  return { stats, openings, passedApplicants, channelStats, monthlyTrend, openingDetails: enrichedDetails, surveys: mockSurveys }
 }
 
 const EXCLUDED_KEYWORDS = ['수습', 'talent pool', '커피챗']
@@ -224,6 +288,12 @@ export async function GET() {
     // 공고 상세: 활성 공고만
     const openingDetails = computeOpeningDetails(openingsWithCount, filteredOpenings)
 
+    // 설문 데이터: 지원자별 폼 응답 병렬 조회 (최대 50명)
+    const applicantIds = allPassed.slice(0, 50).map((a) => a.id)
+    const formsResults = await Promise.all(applicantIds.map((id) => fetchFormsAnswer(id)))
+    const allFormResponses = formsResults.flat()
+    const surveys = aggregateSurveys(allFormResponses)
+
     return NextResponse.json({
       stats,
       openings: openingsWithCount,
@@ -231,6 +301,7 @@ export async function GET() {
       channelStats,
       monthlyTrend,
       openingDetails,
+      surveys,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : '알 수 없는 오류'

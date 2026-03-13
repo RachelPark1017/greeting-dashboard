@@ -99,6 +99,29 @@ export interface OpeningDetail {
   passedCount: number
 }
 
+// 설문 응답
+export interface FormAnswer {
+  questionId: number
+  questionTitle: string
+  answers: { answerId: number; answerContent: string }[]
+}
+
+export interface FormResponse {
+  responseId: number
+  formId: number
+  formTitle: string
+  answers: FormAnswer[]
+}
+
+export interface SurveyAggregated {
+  formTitle: string
+  totalResponses: number
+  questions: {
+    questionTitle: string
+    answerDistribution: { answer: string; count: number }[]
+  }[]
+}
+
 // 전체 대시보드 API 응답
 export interface DashboardResponse {
   stats: DashboardStats
@@ -107,4 +130,5 @@ export interface DashboardResponse {
   channelStats: ChannelStat[]
   monthlyTrend: MonthlyTrend[]
   openingDetails: OpeningDetail[]
+  surveys: SurveyAggregated[]
 }
