@@ -99,37 +99,6 @@ export interface OpeningDetail {
   passedCount: number
 }
 
-// 설문 응답
-export interface FormAnswer {
-  questionId: number
-  questionTitle: string
-  answers: { answerId: number; answerContent: string }[]
-}
-
-export interface FormResponse {
-  responseId: number
-  formId: number
-  formTitle: string
-  answers: FormAnswer[]
-}
-
-export interface SurveyQuestion {
-  questionTitle: string
-  type: 'score' | 'text' | 'nps'
-  avgScore?: number
-  textAnswers?: string[]
-  npsScore?: number
-  npsDistribution?: { promoters: number; passives: number; detractors: number }
-}
-
-export interface SurveyAggregated {
-  formTitle: string
-  totalResponses: number
-  targetCount: number
-  responseRate: number
-  questions: SurveyQuestion[]
-}
-
 // 전체 대시보드 API 응답
 export interface DashboardResponse {
   stats: DashboardStats
@@ -138,5 +107,4 @@ export interface DashboardResponse {
   channelStats: ChannelStat[]
   monthlyTrend: MonthlyTrend[]
   openingDetails: OpeningDetail[]
-  surveys: SurveyAggregated[]
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchOpenings, fetchPassedApplicants, fetchFormsAnswer } from '@/lib/greeting-api'
+import { fetchOpenings, fetchPassedApplicants } from '@/lib/greeting-api'
 import type {
   DashboardStats,
   OpeningWithPassedCount,
@@ -8,8 +8,6 @@ import type {
   MonthlyTrend,
   OpeningDetail,
   Opening,
-  SurveyAggregated,
-  FormResponse,
 } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -96,60 +94,6 @@ function computeOpeningDetails(
   })
 }
 
-const TARGET_FORMS = ['커피챗 경험 설문조사', '면접 경험 설문조사(1차)', '면접 경험 설문조사(2차)']
-
-function aggregateSurveys(allResponses: FormResponse[], targetCount: number): SurveyAggregated[] {
-  const byForm: Record<string, FormResponse[]> = {}
-  for (const r of allResponses) {
-    if (!TARGET_FORMS.includes(r.formTitle)) continue
-    if (!byForm[r.formTitle]) byForm[r.formTitle] = []
-    byForm[r.formTitle].push(r)
-  }
-
-  return TARGET_FORMS.map((formTitle) => {
-    const responses = byForm[formTitle] ?? []
-    const totalResponses = responses.length
-    const responseRate = targetCount > 0 ? (totalResponses / targetCount) * 100 : 0
-
-    // 질문별 답변 수집
-    const questionMap: Record<string, string[]> = {}
-    for (const r of responses) {
-      for (const a of r.answers) {
-        if (!questionMap[a.questionTitle]) questionMap[a.questionTitle] = []
-        for (const ans of a.answers) {
-          questionMap[a.questionTitle].push(ans.answerContent || '')
-        }
-      }
-    }
-
-    const questionEntries = Object.entries(questionMap)
-    const questions: SurveyAggregated['questions'] = questionEntries.map(([questionTitle, answers], idx) => {
-      const isLast = idx === questionEntries.length - 1
-      const numericAnswers = answers.map(Number).filter((n) => !isNaN(n))
-
-      // 마지막 질문 = NPS
-      if (isLast && numericAnswers.length > 0) {
-        const promoters = numericAnswers.filter((n) => n >= 9).length
-        const passives = numericAnswers.filter((n) => n >= 7 && n < 9).length
-        const detractors = numericAnswers.filter((n) => n < 7).length
-        const total = numericAnswers.length
-        const npsScore = total > 0 ? Math.round(((promoters - detractors) / total) * 100) : 0
-        return { questionTitle, type: 'nps' as const, npsScore, npsDistribution: { promoters, passives, detractors } }
-      }
-
-      // 숫자 답변 = 점수형
-      if (numericAnswers.length > 0 && numericAnswers.length >= answers.length * 0.5) {
-        const avg = numericAnswers.reduce((a, b) => a + b, 0) / numericAnswers.length
-        return { questionTitle, type: 'score' as const, avgScore: Math.round(avg * 10) / 10 }
-      }
-
-      // 그 외 = 주관식
-      return { questionTitle, type: 'text' as const, textAnswers: answers.filter(Boolean).slice(0, 10) }
-    })
-
-    return { formTitle, totalResponses, targetCount, responseRate, questions }
-  })
-}
 
 function computeDaysToHire(applicants: PassedApplicant[]): number | null {
   const days = applicants
@@ -220,41 +164,7 @@ function getMockData() {
     career: fieldMap[d.id]?.career ?? null,
   }))
 
-  const mockSurveys: SurveyAggregated[] = [
-    {
-      formTitle: '커피챗 경험 설문조사',
-      totalResponses: 8, targetCount: 10, responseRate: 80,
-      questions: [
-        { questionTitle: '커피챗 분위기는 어땠나요?', type: 'score', avgScore: 4.6 },
-        { questionTitle: '담당자의 설명이 충분했나요?', type: 'score', avgScore: 4.3 },
-        { questionTitle: '개선할 점이 있다면 자유롭게 적어주세요', type: 'text', textAnswers: ['전반적으로 좋았어요', '사무실 투어도 있었으면 좋겠습니다', '시간이 조금 짧았어요'] },
-        { questionTitle: '주변에 커피챗을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 60, npsDistribution: { promoters: 6, passives: 1, detractors: 1 } },
-      ],
-    },
-    {
-      formTitle: '면접 경험 설문조사(1차)',
-      totalResponses: 6, targetCount: 8, responseRate: 75,
-      questions: [
-        { questionTitle: '면접 분위기는 어땠나요?', type: 'score', avgScore: 4.2 },
-        { questionTitle: '면접관의 태도는 적절했나요?', type: 'score', avgScore: 4.5 },
-        { questionTitle: '면접 과정 안내가 충분했나요?', type: 'score', avgScore: 3.9 },
-        { questionTitle: '개선 의견을 자유롭게 적어주세요', type: 'text', textAnswers: ['대기 시간이 좀 길었습니다', '면접관분들이 친절하셨어요', '질문이 명확해서 좋았습니다'] },
-        { questionTitle: '이 면접 경험을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 50, npsDistribution: { promoters: 4, passives: 1, detractors: 1 } },
-      ],
-    },
-    {
-      formTitle: '면접 경험 설문조사(2차)',
-      totalResponses: 4, targetCount: 5, responseRate: 80,
-      questions: [
-        { questionTitle: '면접 분위기는 어땠나요?', type: 'score', avgScore: 4.7 },
-        { questionTitle: '회사에 대한 이해가 높아졌나요?', type: 'score', avgScore: 4.4 },
-        { questionTitle: '추가 의견을 자유롭게 적어주세요', type: 'text', textAnswers: ['경영진과 직접 대화할 수 있어 좋았습니다', '비전이 명확하게 느껴졌어요'] },
-        { questionTitle: '이 면접 경험을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 75, npsDistribution: { promoters: 3, passives: 1, detractors: 0 } },
-      ],
-    },
-  ]
-
-  return { stats, openings, passedApplicants, channelStats, monthlyTrend, openingDetails: enrichedDetails, surveys: mockSurveys }
+  return { stats, openings, passedApplicants, channelStats, monthlyTrend, openingDetails: enrichedDetails }
 }
 
 const EXCLUDED_KEYWORDS = ['수습', 'talent pool', '커피챗']
@@ -315,12 +225,6 @@ export async function GET() {
     // 공고 상세: 활성 공고만
     const openingDetails = computeOpeningDetails(openingsWithCount, filteredOpenings)
 
-    // 설문 데이터: 지원자별 폼 응답 병렬 조회 (최대 50명)
-    const applicantIds = allPassed.slice(0, 50).map((a) => a.id)
-    const formsResults = await Promise.all(applicantIds.map((id) => fetchFormsAnswer(id)))
-    const allFormResponses = formsResults.flat()
-    const surveys = aggregateSurveys(allFormResponses, allPassed.length)
-
     return NextResponse.json({
       stats,
       openings: openingsWithCount,
@@ -328,7 +232,6 @@ export async function GET() {
       channelStats,
       monthlyTrend,
       openingDetails,
-      surveys,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : '알 수 없는 오류'

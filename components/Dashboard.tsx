@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import OverviewTab from './OverviewTab'
 import FunnelTab from './FunnelTab'
 import ChannelTab from './ChannelTab'
-import SurveyTab from './SurveyTab'
+import InsightTab from './InsightTab'
 import type { DashboardResponse, DashboardStats, ChannelStat, MonthlyTrend, OpeningDetail } from '@/lib/types'
 
 function normalizeReferer(referer: string | null): string {
@@ -24,7 +24,7 @@ const TABS = [
   { key: 'overview', label: '개요' },
   { key: 'funnel', label: '채용 현황' },
   { key: 'channel', label: '채널 분석' },
-  { key: 'survey', label: '설문 결과' },
+  { key: 'insight', label: '자동 인사이트' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -247,8 +247,14 @@ export default function Dashboard() {
             passedApplicants={filteredData.passedApplicants}
           />
         )}
-        {activeTab === 'survey' && (
-          <SurveyTab surveys={filteredData.surveys} />
+        {activeTab === 'insight' && (
+          <InsightTab
+            stats={filteredData.stats}
+            monthlyTrend={filteredData.monthlyTrend}
+            channelStats={filteredData.channelStats}
+            openingDetails={filteredData.openingDetails}
+            passedApplicants={filteredData.passedApplicants}
+          />
         )}
       </main>
     </div>
