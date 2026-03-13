@@ -108,3 +108,44 @@ export interface DashboardResponse {
   monthlyTrend: MonthlyTrend[]
   openingDetails: OpeningDetail[]
 }
+
+// 설문조사
+export interface SurveyRespondent {
+  name: string
+  jobTitle: string
+  submitDate: string
+  guidance: number | null
+  experience: number | null
+  difficulty: number | null
+  convenience: number | null  // 2차만
+  nps: number | null
+  culture: string[]           // 1차만: 분위기 태그
+  satisfactionFactors: string[] // 커피챗만
+  comment: string
+}
+
+export interface SurveyStats {
+  totalCount: number
+  avgGuidance: number | null
+  avgExperience: number | null
+  avgDifficulty: number | null
+  avgConvenience: number | null
+  nps: number
+  promoters: number
+  passives: number
+  detractors: number
+  npsDistribution: number[]
+  guidanceDistribution: number[]
+  experienceDistribution: number[]
+  difficultyDistribution: number[]
+  cultureTags: { label: string; count: number }[]
+  satisfactionFactors: { label: string; count: number }[]
+  monthly: { month: string; count: number }[]
+  comments: { name: string; job: string; comment: string; nps: number | null }[]
+}
+
+export interface AllSurveyData {
+  interview1: SurveyStats
+  interview2: SurveyStats
+  coffeechat: SurveyStats
+}
