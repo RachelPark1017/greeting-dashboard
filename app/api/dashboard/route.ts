@@ -96,35 +96,58 @@ function computeOpeningDetails(
   })
 }
 
-function aggregateSurveys(allResponses: FormResponse[]): SurveyAggregated[] {
-  const byForm: Record<string, { formTitle: string; responses: FormResponse[] }> = {}
+const TARGET_FORMS = ['커피챗 경험 설문조사', '면접 경험 설문조사(1차)', '면접 경험 설문조사(2차)']
+
+function aggregateSurveys(allResponses: FormResponse[], targetCount: number): SurveyAggregated[] {
+  const byForm: Record<string, FormResponse[]> = {}
   for (const r of allResponses) {
-    if (!byForm[r.formTitle]) byForm[r.formTitle] = { formTitle: r.formTitle, responses: [] }
-    byForm[r.formTitle].responses.push(r)
+    if (!TARGET_FORMS.includes(r.formTitle)) continue
+    if (!byForm[r.formTitle]) byForm[r.formTitle] = []
+    byForm[r.formTitle].push(r)
   }
 
-  return Object.values(byForm).map(({ formTitle, responses }) => {
-    const questionMap: Record<string, Record<string, number>> = {}
+  return TARGET_FORMS.map((formTitle) => {
+    const responses = byForm[formTitle] ?? []
+    const totalResponses = responses.length
+    const responseRate = targetCount > 0 ? (totalResponses / targetCount) * 100 : 0
+
+    // 질문별 답변 수집
+    const questionMap: Record<string, string[]> = {}
     for (const r of responses) {
       for (const a of r.answers) {
-        if (!questionMap[a.questionTitle]) questionMap[a.questionTitle] = {}
+        if (!questionMap[a.questionTitle]) questionMap[a.questionTitle] = []
         for (const ans of a.answers) {
-          const content = ans.answerContent || '(무응답)'
-          questionMap[a.questionTitle][content] = (questionMap[a.questionTitle][content] ?? 0) + 1
+          questionMap[a.questionTitle].push(ans.answerContent || '')
         }
       }
     }
 
-    return {
-      formTitle,
-      totalResponses: responses.length,
-      questions: Object.entries(questionMap).map(([questionTitle, dist]) => ({
-        questionTitle,
-        answerDistribution: Object.entries(dist)
-          .map(([answer, count]) => ({ answer, count }))
-          .sort((a, b) => b.count - a.count),
-      })),
-    }
+    const questionEntries = Object.entries(questionMap)
+    const questions: SurveyAggregated['questions'] = questionEntries.map(([questionTitle, answers], idx) => {
+      const isLast = idx === questionEntries.length - 1
+      const numericAnswers = answers.map(Number).filter((n) => !isNaN(n))
+
+      // 마지막 질문 = NPS
+      if (isLast && numericAnswers.length > 0) {
+        const promoters = numericAnswers.filter((n) => n >= 9).length
+        const passives = numericAnswers.filter((n) => n >= 7 && n < 9).length
+        const detractors = numericAnswers.filter((n) => n < 7).length
+        const total = numericAnswers.length
+        const npsScore = total > 0 ? Math.round(((promoters - detractors) / total) * 100) : 0
+        return { questionTitle, type: 'nps' as const, npsScore, npsDistribution: { promoters, passives, detractors } }
+      }
+
+      // 숫자 답변 = 점수형
+      if (numericAnswers.length > 0 && numericAnswers.length >= answers.length * 0.5) {
+        const avg = numericAnswers.reduce((a, b) => a + b, 0) / numericAnswers.length
+        return { questionTitle, type: 'score' as const, avgScore: Math.round(avg * 10) / 10 }
+      }
+
+      // 그 외 = 주관식
+      return { questionTitle, type: 'text' as const, textAnswers: answers.filter(Boolean).slice(0, 10) }
+    })
+
+    return { formTitle, totalResponses, targetCount, responseRate, questions }
   })
 }
 
@@ -200,29 +223,33 @@ function getMockData() {
   const mockSurveys: SurveyAggregated[] = [
     {
       formTitle: '커피챗 경험 설문조사',
-      totalResponses: 8,
+      totalResponses: 8, targetCount: 10, responseRate: 80,
       questions: [
-        { questionTitle: '커피챗 전반적 만족도', answerDistribution: [{ answer: '매우 만족', count: 5 }, { answer: '만족', count: 2 }, { answer: '보통', count: 1 }] },
-        { questionTitle: '담당자의 설명이 충분했나요?', answerDistribution: [{ answer: '네', count: 7 }, { answer: '아니오', count: 1 }] },
-        { questionTitle: '커피챗 후 지원 의향', answerDistribution: [{ answer: '지원하겠다', count: 6 }, { answer: '고민 중', count: 2 }] },
+        { questionTitle: '커피챗 분위기는 어땠나요?', type: 'score', avgScore: 4.6 },
+        { questionTitle: '담당자의 설명이 충분했나요?', type: 'score', avgScore: 4.3 },
+        { questionTitle: '개선할 점이 있다면 자유롭게 적어주세요', type: 'text', textAnswers: ['전반적으로 좋았어요', '사무실 투어도 있었으면 좋겠습니다', '시간이 조금 짧았어요'] },
+        { questionTitle: '주변에 커피챗을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 60, npsDistribution: { promoters: 6, passives: 1, detractors: 1 } },
       ],
     },
     {
-      formTitle: '1차 면접 경험 설문조사',
-      totalResponses: 6,
+      formTitle: '면접 경험 설문조사(1차)',
+      totalResponses: 6, targetCount: 8, responseRate: 75,
       questions: [
-        { questionTitle: '면접 분위기는 어땠나요?', answerDistribution: [{ answer: '편안했다', count: 4 }, { answer: '보통', count: 1 }, { answer: '긴장됐다', count: 1 }] },
-        { questionTitle: '면접관의 태도는 어땠나요?', answerDistribution: [{ answer: '매우 좋음', count: 3 }, { answer: '좋음', count: 2 }, { answer: '보통', count: 1 }] },
-        { questionTitle: '면접 과정에 대한 안내가 충분했나요?', answerDistribution: [{ answer: '네', count: 5 }, { answer: '아니오', count: 1 }] },
+        { questionTitle: '면접 분위기는 어땠나요?', type: 'score', avgScore: 4.2 },
+        { questionTitle: '면접관의 태도는 적절했나요?', type: 'score', avgScore: 4.5 },
+        { questionTitle: '면접 과정 안내가 충분했나요?', type: 'score', avgScore: 3.9 },
+        { questionTitle: '개선 의견을 자유롭게 적어주세요', type: 'text', textAnswers: ['대기 시간이 좀 길었습니다', '면접관분들이 친절하셨어요', '질문이 명확해서 좋았습니다'] },
+        { questionTitle: '이 면접 경험을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 50, npsDistribution: { promoters: 4, passives: 1, detractors: 1 } },
       ],
     },
     {
-      formTitle: '2차 면접 경험 설문조사',
-      totalResponses: 4,
+      formTitle: '면접 경험 설문조사(2차)',
+      totalResponses: 4, targetCount: 5, responseRate: 80,
       questions: [
-        { questionTitle: '면접 분위기는 어땠나요?', answerDistribution: [{ answer: '편안했다', count: 3 }, { answer: '보통', count: 1 }] },
-        { questionTitle: '회사에 대한 이해가 높아졌나요?', answerDistribution: [{ answer: '매우 그렇다', count: 2 }, { answer: '그렇다', count: 2 }] },
-        { questionTitle: '전반적 만족도', answerDistribution: [{ answer: '매우 만족', count: 3 }, { answer: '만족', count: 1 }] },
+        { questionTitle: '면접 분위기는 어땠나요?', type: 'score', avgScore: 4.7 },
+        { questionTitle: '회사에 대한 이해가 높아졌나요?', type: 'score', avgScore: 4.4 },
+        { questionTitle: '추가 의견을 자유롭게 적어주세요', type: 'text', textAnswers: ['경영진과 직접 대화할 수 있어 좋았습니다', '비전이 명확하게 느껴졌어요'] },
+        { questionTitle: '이 면접 경험을 추천하시겠습니까? (0~10)', type: 'nps', npsScore: 75, npsDistribution: { promoters: 3, passives: 1, detractors: 0 } },
       ],
     },
   ]
@@ -292,7 +319,7 @@ export async function GET() {
     const applicantIds = allPassed.slice(0, 50).map((a) => a.id)
     const formsResults = await Promise.all(applicantIds.map((id) => fetchFormsAnswer(id)))
     const allFormResponses = formsResults.flat()
-    const surveys = aggregateSurveys(allFormResponses)
+    const surveys = aggregateSurveys(allFormResponses, allPassed.length)
 
     return NextResponse.json({
       stats,

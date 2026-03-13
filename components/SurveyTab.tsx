@@ -1,27 +1,23 @@
 'use client'
 
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from 'recharts'
-import type { SurveyAggregated } from '@/lib/types'
+import type { SurveyAggregated, SurveyQuestion } from '@/lib/types'
 
 interface Props {
   surveys: SurveyAggregated[]
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
-
-const tooltipStyle = {
-  borderRadius: '8px',
-  border: '1px solid #e4e4e7',
-  boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)',
-  fontSize: '12px',
+function NpsGauge({ score, distribution }: { score: number; distribution: NonNullable<SurveyQuestion['npsDistribution']> }) {
+  const total = distribution.promoters + distribution.passives + distribution.detractors
+  const color = score >= 50 ? 'text-emerald-600' : score >= 0 ? 'text-amber-500' : 'text-red-500'
+  return (
+    <div className="flex items-center gap-4">
+      <span className={`text-3xl font-bold ${color}`}>{score}</span>
+      <div className="text-xs text-zinc-500 space-y-0.5">
+        <p>추천 {distribution.promoters}명 · 중립 {distribution.passives}명 · 비추천 {distribution.detractors}명</p>
+        <p className="text-zinc-400">총 {total}명 응답</p>
+      </div>
+    </div>
+  )
 }
 
 export default function SurveyTab({ surveys }: Props) {
@@ -37,39 +33,61 @@ export default function SurveyTab({ surveys }: Props) {
     <div className="space-y-6">
       {surveys.map((survey) => (
         <div key={survey.formTitle} className="rounded-lg border border-zinc-200 bg-white shadow-sm">
-          <div className="p-6 pb-2 border-b border-zinc-100">
-            <h3 className="text-base font-semibold text-zinc-900">{survey.formTitle}</h3>
-            <p className="text-sm text-zinc-500 mt-1">총 {survey.totalResponses}명 응답</p>
+          {/* Header */}
+          <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-semibold text-zinc-900">{survey.formTitle}</h3>
+              <p className="text-sm text-zinc-500 mt-0.5">{survey.totalResponses}명 응답 / {survey.targetCount}명 대상</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-zinc-900">{survey.responseRate.toFixed(0)}%</p>
+              <p className="text-xs text-zinc-400">응답률</p>
+            </div>
           </div>
 
-          <div className="p-6 space-y-8">
-            {survey.questions.map((q) => (
+          <div className="p-6 space-y-5">
+            {/* 점수형 질문들 */}
+            {survey.questions.filter((q) => q.type === 'score').length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-3">항목별 평균 점수</p>
+                <div className="space-y-2">
+                  {survey.questions.filter((q) => q.type === 'score').map((q) => (
+                    <div key={q.questionTitle} className="flex items-center justify-between py-2 border-b border-zinc-50 last:border-0">
+                      <span className="text-sm text-zinc-700">{q.questionTitle}</span>
+                      <div className="flex items-center gap-2">
+                        <div className="w-24 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-blue-500"
+                            style={{ width: `${((q.avgScore ?? 0) / 5) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-sm font-semibold text-zinc-900 w-8 text-right">{q.avgScore}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 주관식 답변 */}
+            {survey.questions.filter((q) => q.type === 'text').map((q) => (
               <div key={q.questionTitle}>
-                <p className="text-sm font-medium text-zinc-700 mb-3">{q.questionTitle}</p>
-                <ResponsiveContainer width="100%" height={40 + q.answerDistribution.length * 36}>
-                  <BarChart
-                    data={q.answerDistribution}
-                    layout="vertical"
-                    margin={{ top: 0, right: 24, left: 0, bottom: 0 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" horizontal={false} />
-                    <XAxis type="number" tick={{ fontSize: 11, fill: '#71717a' }} allowDecimals={false} />
-                    <YAxis
-                      type="category"
-                      dataKey="answer"
-                      tick={{ fontSize: 12, fill: '#3f3f46' }}
-                      width={140}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <Tooltip contentStyle={tooltipStyle} />
-                    <Bar dataKey="count" name="응답 수" radius={[0, 4, 4, 0]}>
-                      {q.answerDistribution.map((_, i) => (
-                        <rect key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">주관식 답변</p>
+                <p className="text-sm font-medium text-zinc-700 mb-2">{q.questionTitle}</p>
+                <ul className="space-y-1.5">
+                  {(q.textAnswers ?? []).map((t, i) => (
+                    <li key={i} className="text-sm text-zinc-600 pl-3 border-l-2 border-zinc-200">{t}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+
+            {/* NPS */}
+            {survey.questions.filter((q) => q.type === 'nps').map((q) => (
+              <div key={q.questionTitle}>
+                <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider mb-2">NPS (추천 지수)</p>
+                <p className="text-sm text-zinc-600 mb-2">{q.questionTitle}</p>
+                {q.npsDistribution && <NpsGauge score={q.npsScore ?? 0} distribution={q.npsDistribution} />}
               </div>
             ))}
           </div>

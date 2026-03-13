@@ -113,13 +113,21 @@ export interface FormResponse {
   answers: FormAnswer[]
 }
 
+export interface SurveyQuestion {
+  questionTitle: string
+  type: 'score' | 'text' | 'nps'
+  avgScore?: number
+  textAnswers?: string[]
+  npsScore?: number
+  npsDistribution?: { promoters: number; passives: number; detractors: number }
+}
+
 export interface SurveyAggregated {
   formTitle: string
   totalResponses: number
-  questions: {
-    questionTitle: string
-    answerDistribution: { answer: string; count: number }[]
-  }[]
+  targetCount: number
+  responseRate: number
+  questions: SurveyQuestion[]
 }
 
 // 전체 대시보드 API 응답
