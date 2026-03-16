@@ -5,7 +5,8 @@ import OverviewTab from './OverviewTab'
 import FunnelTab from './FunnelTab'
 import ChannelTab from './ChannelTab'
 import InsightTab from './InsightTab'
-import type { DashboardResponse, DashboardStats, ChannelStat, MonthlyTrend, OpeningDetail } from '@/lib/types'
+import SurveyTab from './SurveyTab'
+import type { DashboardResponse, DashboardStats, ChannelStat, MonthlyTrend, OpeningDetail, AllSurveyData } from '@/lib/types'
 
 function normalizeReferer(referer: string | null): string {
   if (!referer) return '기타'
@@ -25,6 +26,7 @@ const TABS = [
   { key: 'funnel', label: '채용 현황' },
   { key: 'channel', label: '채널 분석' },
   { key: 'insight', label: '자동 인사이트' },
+  { key: 'survey', label: '설문조사' },
 ] as const
 
 type TabKey = (typeof TABS)[number]['key']
@@ -54,6 +56,9 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [activeTab, setActiveTab] = useState<TabKey>('overview')
   const [period, setPeriod] = useState<PeriodKey>('all')
+  const [surveyData, setSurveyData] = useState<AllSurveyData | null>(null)
+  const [surveyLoading, setSurveyLoading] = useState(false)
+  const [surveyError, setSurveyError] = useState<string | null>(null)
 
   const fetchData = useCallback(async () => {
     try {
@@ -71,11 +76,31 @@ export default function Dashboard() {
     }
   }, [])
 
+  const fetchSurvey = useCallback(async () => {
+    setSurveyLoading(true)
+    try {
+      const res = await fetch('/api/survey')
+      if (!res.ok) throw new Error(`서버 오류: ${res.status}`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      setSurveyData(json)
+      setSurveyError(null)
+    } catch (e) {
+      setSurveyError(e instanceof Error ? e.message : '설문 데이터 로드 실패')
+    } finally {
+      setSurveyLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     fetchData()
     const interval = setInterval(fetchData, REFRESH_INTERVAL)
     return () => clearInterval(interval)
   }, [fetchData])
+
+  useEffect(() => {
+    fetchSurvey()
+  }, [fetchSurvey])
 
   const filteredData = useMemo(() => {
     if (!data) return null
@@ -255,6 +280,30 @@ export default function Dashboard() {
             openingDetails={filteredData.openingDetails}
             passedApplicants={filteredData.passedApplicants}
           />
+        )}
+        {activeTab === 'survey' && (
+          surveyLoading ? (
+            <div className="flex items-center justify-center py-24">
+              <div className="flex flex-col items-center gap-3">
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-zinc-200 border-t-zinc-800" />
+                <p className="text-sm text-zinc-500">설문 데이터 불러오는 중...</p>
+              </div>
+            </div>
+          ) : surveyError ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-4">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 max-w-md text-center">
+                <p className="text-sm font-medium text-red-600">{surveyError}</p>
+              </div>
+              <button
+                onClick={fetchSurvey}
+                className="rounded-md text-sm font-medium h-9 px-4 py-2 bg-zinc-900 text-white hover:bg-zinc-800 transition-colors"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : surveyData ? (
+            <SurveyTab data={surveyData} />
+          ) : null
         )}
       </main>
     </div>
